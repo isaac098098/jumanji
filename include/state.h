@@ -11,6 +11,7 @@ typedef struct state {
     window *window;
     float displacement[2];
     float zoom;
+    float pages_pos[MAX_RENDERED_PAGES][2];
 } state;
 
 #endif // STATE_H

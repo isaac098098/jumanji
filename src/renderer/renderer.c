@@ -3,10 +3,12 @@
 #define GLFW_INCLUDE_NONE
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
+
 #include "renderer.h"
 #include "window.h"
-
+#include "state.h"
 #define MAX_COMPILE_LOG_LEN 512
+#define ID_MAT2 (float[4]){ 1.0f, 0.0f, 0.0f, 1.0f }
 
 const float wrap_border_color[] = { 1.0f, 1.0f, 1.0f, 1.0f };
 
@@ -38,7 +40,7 @@ char* read_file(const char *path) {
 int compile_and_get_shaders(GLuint *shader_program) {
     // compile vertex shader
 
-    char *vertex_shader_source = read_file("src/shaders/shader.vert");
+    char *vertex_shader_source = read_file(SHADER_DIR "/shader.vert");
     const char *src = vertex_shader_source;
     GLuint vertex_shader = 0;
     vertex_shader = glCreateShader(GL_VERTEX_SHADER);
@@ -59,7 +61,7 @@ int compile_and_get_shaders(GLuint *shader_program) {
 
     // compile fragment shader
 
-    char *fragment_shader_source = read_file("src/shaders/shader.frag");
+    char *fragment_shader_source = read_file(SHADER_DIR "/shader.frag");
     src = fragment_shader_source;
     unsigned int fragment_shader = 0;
     fragment_shader = glCreateShader(GL_FRAGMENT_SHADER);
@@ -151,17 +153,17 @@ int init_renderer(renderer *renderer) {
     glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, 4 * sizeof(float),
                           (void*)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
-
+    
     // set textures configuration
 
-    glGenTextures(1, &renderer->texture);
-    glBindTexture(GL_TEXTURE_2D, renderer->texture);
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
-    glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, wrap_border_color);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+        glBindTexture(GL_TEXTURE_2D, renderer->textures[i]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
+        glTexParameterfv(GL_TEXTURE_2D, GL_TEXTURE_BORDER_COLOR, wrap_border_color);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    }
 
     glfwSwapInterval(1);
     glClearColor(0.2f, 0.3f, 0.3f, 0.5f);
@@ -169,32 +171,65 @@ int init_renderer(renderer *renderer) {
     return 0;
 }
 
-void render_pages(document *pdf, window *win) {
-    // new pixmap from page
+void initial_render(document *pdf, renderer *r, window *win) {
+    state *s = glfwGetWindowUserPointer(win->glfw_win);
 
-    float zoom = 3.0;
-    fz_matrix ctm = fz_scale(zoom, zoom);
+    // TODO: check if MAX_RENDERED_PAGES > fz_count_pages
 
-    fz_try(pdf->ctx) {
-        pdf->pixmap = fz_new_pixmap_from_page_number(pdf->ctx, pdf->doc, 4, ctm,
-                fz_device_rgb(pdf->ctx), 1);
+    for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+        float zoom = 1.0;
+        fz_matrix ctm = fz_scale(zoom, zoom);
+
+        fz_try(pdf->ctx) {
+            pdf->pixmaps[i] = 
+                fz_new_pixmap_from_page_number(pdf->ctx, pdf->doc, i,
+                                               ctm, fz_device_rgb(pdf->ctx), 1);
+        }
+        fz_catch(pdf->ctx) {
+            fprintf(stderr, "could not create pixmap\n!");
+            fz_drop_document(pdf->ctx, pdf->doc);
+            fz_drop_context(pdf->ctx);
+        }
+
+        s->document->width = pdf->pixmaps[i]->w;
+        s->document->height = pdf->pixmaps[i]->h;
+
+        int winw = s->window->width;
+        int winh = s->window->height;
+        int docw = s->document->width;
+        int doch = s->document->height;
+
+        glBindTexture(GL_TEXTURE_2D, r->textures[i]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf->pixmaps[i]->w, pdf->pixmaps[i]->h,
+                     0, GL_RGBA, GL_UNSIGNED_BYTE, pdf->pixmaps[i]->samples);
+
+        glUniformMatrix2fv(r->rotation_uniform, 1, GL_FALSE, ID_MAT2);
+        float sx = ((float)winh / doch) * ((float)docw / winw);
+        float scale_matrix[] = { sx, 0.0f, 0.0f, 1.0f };
+        glUniformMatrix2fv(r->scale_uniform, 1, GL_FALSE, scale_matrix);
+
+        r->zoom_matrix[0] = 1.0f;
+        r->zoom_matrix[1] = 0.0f;
+        r->zoom_matrix[2] = 0.0f;
+        r->zoom_matrix[3] = 1.0f;
+        glUniformMatrix2fv(r->zoom_uniform, 1, GL_FALSE, r->zoom_matrix);
+
+        // glUniform2fv(r->displacement_uniform, 1, s->displacement);
     }
-    fz_catch(pdf->ctx) {
-        fprintf(stderr, "could not create pixmap\n!");
-        fz_drop_document(pdf->ctx, pdf->doc);
-        fz_drop_context(pdf->ctx);
-    }
 
-    pdf->width = pdf->pixmap->w;
-    pdf->height = pdf->pixmap->h;
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf->pixmap->w, pdf->pixmap->h,
-                 0, GL_RGBA, GL_UNSIGNED_BYTE, pdf->pixmap->samples);
-
-    fz_drop_pixmap(pdf->ctx, pdf->pixmap);
+    /* TODO: set last displacement, zoom and rotation of document */
 }
 
-void draw_pages(window *win, renderer *renderer) {
+void render_pages(document *pdf, window *win, renderer *renderer) {
+    pdf->width = pdf->pixmaps[0]->w;
+    pdf->height = pdf->pixmaps[0]->h;
+
+    for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+        fz_drop_pixmap(pdf->ctx, pdf->pixmaps[i]);
+    }
+}
+
+void draw_pages(window *win, renderer *r) {
     glClear(GL_COLOR_BUFFER_BIT);
     glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
     glfwSwapBuffers(win->glfw_win);

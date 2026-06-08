@@ -7,7 +7,7 @@ typedef struct document {
     fz_context *ctx;
     fz_document *doc;
     fz_colorspace *colorspace;
-    fz_pixmap *pixmap;
+    fz_pixmap **pixmaps;
     int width;
     int height;
 } document;

@@ -9,6 +9,7 @@ typedef struct window {
     GLFWwindow *glfw_win;
     int width;
     int height;
+    int current_page;
     int rotation_deg;
     int should_redraw;
 } window;

@@ -3,6 +3,9 @@
 
 #include "pdf.h"
 
+#define MAX_RENDERED_PAGES 2
+#define PAGE_GAP 0.01f
+
 typedef struct window window;
 
 typedef struct renderer {
@@ -10,17 +13,18 @@ typedef struct renderer {
     GLuint vbo;
     GLuint ebo;
     GLuint shader_program;
-    GLuint texture;
-    GLuint aspect_uniform;
+    GLuint *textures;
     GLuint rotation_uniform;
     GLuint scale_uniform;
     GLuint zoom_uniform;
+    float zoom_matrix[4];
     GLuint displacement_uniform;
     int should_rerender;
 } renderer;
 
 int init_renderer(renderer *renderer);
-void render_pages(document *pdf, window *win);
-void draw_pages(window *win, renderer *renderer);
+void initial_render(document *pdf, renderer *r, window *win);
+void render_pages(document *pdf, window *win, renderer *renderer);
+void draw_pages(window *win, renderer *r);
 
 #endif // RENDERER_H
