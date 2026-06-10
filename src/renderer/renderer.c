@@ -177,7 +177,7 @@ void initial_render(document *pdf, renderer *r, window *win) {
     // TODO: check if MAX_RENDERED_PAGES > fz_count_pages
 
     for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-        float zoom = 1.0;
+        float zoom = 4.0;
         fz_matrix ctm = fz_scale(zoom, zoom);
 
         fz_try(pdf->ctx) {
@@ -202,9 +202,11 @@ void initial_render(document *pdf, renderer *r, window *win) {
         glBindTexture(GL_TEXTURE_2D, r->textures[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf->pixmaps[i]->w, pdf->pixmaps[i]->h,
                      0, GL_RGBA, GL_UNSIGNED_BYTE, pdf->pixmaps[i]->samples);
+        r->pages[i].page_number = i;
 
         glUniformMatrix2fv(r->rotation_uniform, 1, GL_FALSE, ID_MAT2);
         float sx = ((float)winh / doch) * ((float)docw / winw);
+        s->renderer->pages[i].aspect = sx;
         float scale_matrix[] = { sx, 0.0f, 0.0f, 1.0f };
         glUniformMatrix2fv(r->scale_uniform, 1, GL_FALSE, scale_matrix);
 
