@@ -2,6 +2,8 @@
 #define WINDOW_H
 
 #include <GLFW/glfw3.h>
+#define MAX_ZOOM 10.0f
+#define MIN_ZOOM 0.3f
 
 typedef struct renderer renderer;
 

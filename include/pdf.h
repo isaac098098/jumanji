@@ -8,9 +8,8 @@ typedef struct document {
     fz_document *doc;
     fz_colorspace *colorspace;
     fz_pixmap **pixmaps;
-    int width;
-    int height;
     int pages_num;
+    int *base_page_heights;
 } document;
 
 int open_document(document *pdf, const char *file_path);

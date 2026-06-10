@@ -178,8 +178,17 @@ void initial_render(document *pdf, renderer *r, window *win) {
 
     int initial_page = 0;
     for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-        float zoom = INITIAL_RENDER_ZOOM;
-        fz_matrix ctm = fz_scale(zoom, zoom);
+        fz_page *page = NULL;
+        fz_rect bbox;
+        page = fz_load_page(pdf->ctx, pdf->doc, i + initial_page);
+        bbox = fz_bound_page(pdf->ctx, page);
+
+        float page_width = bbox.x1 - bbox.x0;
+        float page_height = bbox.y1 - bbox.y0;
+
+        float height_zoom = (s->window->height * s->zoom) / page_height;
+
+        fz_matrix ctm = fz_scale(height_zoom, height_zoom);
 
         fz_try(pdf->ctx) {
             pdf->pixmaps[i] = 
@@ -192,13 +201,11 @@ void initial_render(document *pdf, renderer *r, window *win) {
             fz_drop_context(pdf->ctx);
         }
 
-        s->document->width = pdf->pixmaps[i]->w;
-        s->document->height = pdf->pixmaps[i]->h;
-
+        pdf->base_page_heights[i] = page_height;
         int winw = s->window->width;
         int winh = s->window->height;
-        int docw = s->document->width;
-        int doch = s->document->height;
+        int docw = s->document->pixmaps[i]->w;
+        int doch = s->document->pixmaps[i]->h;
 
         glBindTexture(GL_TEXTURE_2D, r->textures[i]);
         glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf->pixmaps[i]->w, pdf->pixmaps[i]->h,
@@ -217,19 +224,10 @@ void initial_render(document *pdf, renderer *r, window *win) {
         r->zoom_matrix[3] = 1.0f;
         glUniformMatrix2fv(r->zoom_uniform, 1, GL_FALSE, r->zoom_matrix);
 
-        // glUniform2fv(r->displacement_uniform, 1, s->displacement);
+        fz_drop_page(pdf->ctx, page);
     }
 
     /* TODO: set last displacement, zoom and rotation of document */
-}
-
-void render_pages(document *pdf, window *win, renderer *renderer) {
-    pdf->width = pdf->pixmaps[0]->w;
-    pdf->height = pdf->pixmaps[0]->h;
-
-    for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-        fz_drop_pixmap(pdf->ctx, pdf->pixmaps[i]);
-    }
 }
 
 void draw_pages(window *win, renderer *r) {

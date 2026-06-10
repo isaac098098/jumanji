@@ -3,15 +3,15 @@
 
 #include "pdf.h"
 
-#define MAX_RENDERED_PAGES 10
+#define MAX_RENDERED_PAGES 5
 #define PAGE_GAP 0.01f
-#define INITIAL_RENDER_ZOOM 1.5f
 
 typedef struct window window;
 
 typedef struct page {
     int texture_index;
     int page_number;
+    int should_rerender;
     float aspect;
 } page;
 
@@ -27,7 +27,6 @@ typedef struct renderer {
     GLuint zoom_uniform;
     float zoom_matrix[4];
     GLuint displacement_uniform;
-    int should_rerender;
 } renderer;
 
 int init_renderer(renderer *renderer);

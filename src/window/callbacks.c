@@ -5,8 +5,6 @@
 #include "state.h"
 #include "window.h"
 
-#define MAX_ZOOM 10.0f
-#define MIN_ZOOM 0.3f
 #define ID_MAT2 (float[4]){ 1.0f, 0.0f, 0.0f, 1.0f }
 
 void error_callback(int error, const char *description) {
@@ -29,9 +27,8 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
 
         glUniformMatrix2fv(s->renderer->zoom_uniform, 1, GL_FALSE, ID_MAT2);
         s->zoom = 1.0f;
-        s->new_render_zoom = 1.0f;
-
-        fz_matrix ctm = fz_scale(s->new_render_zoom, s->new_render_zoom);
+        s->render_zoom = (s->window->height * s->zoom * 1.5f) / s->document->base_page_heights[texture];
+        fz_matrix ctm = fz_scale(s->render_zoom, s->render_zoom);
         fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
         s->document->pixmaps[texture] =
             fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
@@ -40,8 +37,9 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
                     fz_device_rgb(s->document->ctx),
                     1);
         glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w, s->document->pixmaps[texture]->h,
-                0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[texture]->samples);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w,
+                     s->document->pixmaps[texture]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     s->document->pixmaps[texture]->samples);
 
         s->window->should_redraw = 1;
     }
@@ -241,22 +239,23 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
 
         int texture = s->current_page.texture_index;
         float stride = s->pages_pos[texture][0];
-        float aspect = s->renderer->pages[texture].aspect;
 
         for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
             s->pages_pos[i][0] -= stride;
         }
 
+        float aspect = s->renderer->pages[texture].aspect;
         s->zoom = 1.0f / aspect;
+
         s->renderer->zoom_matrix[0] = s->zoom;
         s->renderer->zoom_matrix[3] = s->zoom;
         glUniformMatrix2fv(s->renderer->zoom_uniform, 1, GL_FALSE, 
                            s->renderer->zoom_matrix);
 
-        s->new_render_zoom = (float)s->document->height / s->window->height;
-        s->changed_render_zoom = 1;
+        s->render_zoom = (s->window->height * s->zoom * 1.5f) / s->document->base_page_heights[texture];
+        s->changed_zoom = 1;
 
-        fz_matrix ctm = fz_scale(s->new_render_zoom, s->new_render_zoom);
+        fz_matrix ctm = fz_scale(s->render_zoom, s->render_zoom);
         fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
         s->document->pixmaps[texture] =
             fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
@@ -265,13 +264,20 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
                     fz_device_rgb(s->document->ctx),
                     1);
         glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w, s->document->pixmaps[texture]->h,
-                0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[texture]->samples);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w,
+                     s->document->pixmaps[texture]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     s->document->pixmaps[texture]->samples);
+
+        s->renderer->pages[texture].should_rerender = 0;
+
+        for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+            if(i != texture) s->renderer->pages[i].should_rerender = 1;
+        }
 
         s->window->should_redraw = 1;
     }
 
-    if(key == GLFW_KEY_MINUS && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
+    if(key == GLFW_KEY_LEFT_BRACKET && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
         // zoom out
 
         if(s->zoom > MIN_ZOOM) {
@@ -295,13 +301,76 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
                     s->pages_pos[i][0] = -limit;
             }
 
+            s->changed_zoom = 1;
+
             s->window->should_redraw = 1;
         }
     }
 
-    if(key == GLFW_KEY_EQUAL && (action == GLFW_PRESS || action == GLFW_REPEAT)
-                             && (mods & GLFW_MOD_SHIFT))
-    {
+    if(key == GLFW_KEY_LEFT_BRACKET && action == GLFW_RELEASE) {
+        // zoom out release
+
+        int texture = s->current_page.texture_index;
+
+        if(s->zoom < 6.0f) {
+            s->render_zoom = 5.0f;
+        }
+
+        if(s->zoom < 3.0f) {
+            s->render_zoom = 3.5f;
+        }
+
+        if(s->zoom < 2.6f) {
+            s->render_zoom = 3.0f;
+        }
+
+        if(s->zoom < 2.1f) {
+            s->render_zoom = 2.5f;
+        }
+
+        if(s->zoom < 1.5f) {
+            s->render_zoom = 2.0f;
+        }
+
+        if(s->zoom < 1.2f) {
+            s->render_zoom = 1.5f;
+        }
+
+        if(s->zoom < 0.9f) {
+            s->render_zoom = 1.0f;
+        }
+
+        if(s->zoom < 0.7f) {
+            s->render_zoom = 0.5f;
+        }
+
+        if(s->zoom < 0.25f) {
+            s->render_zoom = 0.25f;
+        }
+
+        fz_matrix ctm = fz_scale(s->render_zoom, s->render_zoom);
+        fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
+        s->document->pixmaps[texture] =
+            fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
+                    s->renderer->pages[texture].page_number,
+                    ctm,
+                    fz_device_rgb(s->document->ctx),
+                    1);
+        glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w,
+                s->document->pixmaps[texture]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                s->document->pixmaps[texture]->samples);
+
+        s->renderer->pages[texture].should_rerender = 0;
+
+        for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+            if(i != texture) s->renderer->pages[i].should_rerender = 1;
+        }
+
+        s->window->should_redraw = 1;
+    }
+
+    if(key == GLFW_KEY_RIGHT_BRACKET && (action == GLFW_PRESS || action == GLFW_REPEAT)) {
         // zoom in
 
         if(s->zoom < MAX_ZOOM) {
@@ -329,27 +398,44 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
         }
     }
 
-    if(key == GLFW_KEY_EQUAL && action == GLFW_RELEASE && (mods & GLFW_MOD_SHIFT))
-    {
+    if(key == GLFW_KEY_RIGHT_BRACKET && action == GLFW_RELEASE) {
+        // zoom in release
+
         int texture = s->current_page.texture_index;
 
+        if(s->zoom > 0.5f) {
+            s->render_zoom = 1.0f;
+        }
+
+        if(s->zoom > 0.7f) {
+            s->render_zoom = 1.2f;
+        }
+
+        if(s->zoom > 0.9f) {
+            s->render_zoom = 1.5f;
+        }
+
+        if(s->zoom > 1.2f) {
+            s->render_zoom = 2.0f;
+        }
+
         if(s->zoom > 1.5f) {
-            s->old_render_zoom = s->new_render_zoom;
-            s->new_render_zoom = 2.0f;
+            s->render_zoom = 2.5f;
+        }
+
+        if(s->zoom > 2.0f) {
+            s->render_zoom = 4.0f;
         }
 
         if(s->zoom > 3.0f) {
-            s->old_render_zoom = s->new_render_zoom;
-            s->new_render_zoom = 4.0f;
+            s->render_zoom = 6.0f;
         }
 
         if(s->zoom > 6.0f) {
-            s->old_render_zoom = s->new_render_zoom;
-            s->new_render_zoom = 8.0f;
+            s->render_zoom = 8.0f;
         }
 
-        fz_matrix ctm = fz_scale(s->new_render_zoom, s->new_render_zoom);
-        printf("new_render_zoom = %f\n", s->new_render_zoom);
+        fz_matrix ctm = fz_scale(s->render_zoom, s->render_zoom);
         fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
         s->document->pixmaps[texture] =
             fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
@@ -358,17 +444,83 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
                     fz_device_rgb(s->document->ctx),
                     1);
         glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w, s->document->pixmaps[texture]->h,
-                0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[texture]->samples);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w,
+                     s->document->pixmaps[texture]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                     s->document->pixmaps[texture]->samples);
+
+        s->renderer->pages[texture].should_rerender = 0;
+
+        for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+            if(i != texture) s->renderer->pages[i].should_rerender = 1;
+        }
 
         s->window->should_redraw = 1;
     }
 }
 
 void framebuffer_size_callback(GLFWwindow *win, int width, int height) {
-    glViewport(LEFT_CORNER_X, LEFT_CORNER_Y, width, height);
     state *s = glfwGetWindowUserPointer(win);
+    glViewport(LEFT_CORNER_X, LEFT_CORNER_Y, width, height);
+
     s->window->width = width;
     s->window->height = height;
+
+    s->changed_zoom = 1;
+
+    for(int i = 0; i < MAX_RENDERED_PAGES; i++) s->renderer->pages[i].should_rerender = 1;
+
+    for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+        // rerender visible pages
+
+        int winw = s->window->width;
+        int winh = s->window->height;
+        int docw = s->document->pixmaps[i]->w;
+        int doch = s->document->pixmaps[i]->h;
+
+        if(s->zoom > 0.9f) {
+            float center = s->zoom * s->pages_pos[i][1];
+            float bottom = center - s->zoom;
+            float top = center + s->zoom;
+
+            if(top > -1.0f && bottom < 1.0f) {
+                s->render_zoom = (s->window->height * s->zoom * 1.5) / s->document->base_page_heights[i];
+                fz_matrix ctm = fz_scale(s->render_zoom, s->render_zoom);
+
+                int page_num = s->renderer->pages[i].page_number;
+                fz_drop_pixmap(s->document->ctx, s->document->pixmaps[i]);
+
+                fz_try(s->document->ctx) {
+                    s->document->pixmaps[i] = 
+                        fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc, page_num,
+                                                       ctm, fz_device_rgb(s->document->ctx), 1);
+                }
+                fz_catch(s->document->ctx) {
+                    fprintf(stderr, "could not create pixmap\n!");
+                    fz_drop_document(s->document->ctx, s->document->doc);
+                    fz_drop_context(s->document->ctx);
+                }
+
+                int winw = s->window->width;
+                int winh = s->window->height;
+                int docw = s->document->pixmaps[i]->w;
+                int doch = s->document->pixmaps[i]->h;
+
+                glBindTexture(GL_TEXTURE_2D, s->renderer->textures[i]);
+                glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[i]->w, s->document->pixmaps[i]->h,
+                             0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[i]->samples);
+                s->renderer->pages[i].page_number = page_num;
+
+                glUniformMatrix2fv(s->renderer->rotation_uniform, 1, GL_FALSE, ID_MAT2);
+
+                s->renderer->pages[i].should_rerender = 0;
+            }
+        }
+
+        float sx = ((float)winh / doch) * ((float)docw / winw);
+        s->renderer->pages[i].aspect = sx;
+        float scale_matrix[] = { sx, 0.0f, 0.0f, 1.0f };
+        glUniformMatrix2fv(s->renderer->scale_uniform, 1, GL_FALSE, scale_matrix);
+    }
+
     s->window->should_redraw = 1;
 }

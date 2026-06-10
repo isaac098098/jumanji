@@ -3,6 +3,7 @@
 #include <glad/glad.h>
 #include <GLFW/glfw3.h>
 #include <mupdf/fitz.h>
+#include <float.h>
 
 #include "pdf.h"
 #include "renderer.h"
@@ -25,6 +26,7 @@ int main(int argc, char **argv) {
     }
 
     pdf.pixmaps = malloc(MAX_RENDERED_PAGES * sizeof(*pdf.pixmaps));
+    pdf.base_page_heights = malloc(MAX_RENDERED_PAGES * sizeof(*pdf.base_page_heights));
 
     // initialize window
 
@@ -64,8 +66,6 @@ int main(int argc, char **argv) {
     state.renderer = &renderer;
     state.window = &win;
     state.zoom = 1.0f;
-    state.old_render_zoom = INITIAL_RENDER_ZOOM;
-    state.new_render_zoom = INITIAL_RENDER_ZOOM;
     
     // set window user pointer
 
@@ -88,17 +88,47 @@ int main(int argc, char **argv) {
 
     int first_page = 0;
     int last_page = MAX_RENDERED_PAGES - 1;
-    printf("pages_num = %d\n", pdf.pages_num);
 
     while(!glfwWindowShouldClose(win.glfw_win)) {
         if(win.should_redraw == 1) {
             glClear(GL_COLOR_BUFFER_BIT);
-            for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-                glBindTexture(GL_TEXTURE_2D, renderer.textures[i]);
-                // printf("pages_pos[%d] = { %f, %f }\n", i, state.zoom * state.pages_pos[i][0], state.zoom * state.pages_pos[i][1]);
-                glUniform2fv(renderer.displacement_uniform, 1, state.pages_pos[i]);
-                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+
+            // rerender pages if visible pages if zoom has changed and
+            // mark all the other pages as rerender pending
+
+            if(state.changed_zoom) {
+                for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+                    float center = state.zoom * state.pages_pos[i][1];
+                    float bottom = center - state.zoom;
+                    float top = center + state.zoom;
+
+                    if(top > -1.0f && bottom < 1.0f)
+                    {
+                        if(renderer.pages[i].should_rerender == 1) {
+                            glBindTexture(GL_TEXTURE_2D, renderer.textures[i]);
+                            state.render_zoom = (state.window->height * state.zoom * 1.5f) / state.document->base_page_heights[i];
+                            fz_matrix ctm = fz_scale(state.render_zoom, state.render_zoom);
+                            fz_drop_pixmap(pdf.ctx, pdf.pixmaps[i]);
+                            pdf.pixmaps[i] = 
+                                fz_new_pixmap_from_page_number(pdf.ctx, pdf.doc,
+                                        renderer.pages[i].page_number,
+                                        ctm,
+                                        fz_device_rgb(pdf.ctx),
+                                        1);
+                            glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf.pixmaps[i]->w, 
+                                    pdf.pixmaps[i]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, 
+                                    pdf.pixmaps[i]->samples);
+
+                            renderer.pages[i].should_rerender = 0;
+                            win.should_redraw = 1;
+                        }
+
+                    }
+                }
             }
+
+            // draw next page if needed and check if it's the
+            // last page of the document
 
             while(state.zoom * state.pages_pos[last_page][1] > (-1.0f + PAGE_GAP)) {
                 if(renderer.pages[last_page].page_number < state.document->pages_num - 1) {
@@ -107,9 +137,7 @@ int main(int argc, char **argv) {
                     // printf("pages_pos[first_page] = { %f, %f }\n", state.zoom * state.pages_pos[first_page][0], state.zoom * state.pages_pos[first_page][1]);
 
                     if(renderer.pages[first_page].page_number != renderer.pages[last_page].page_number + 1) {
-                        // printf("should rerender next page\n");
-                        float zoom = state.new_render_zoom;
-                        fz_matrix ctm = fz_scale(zoom, zoom);
+                        fz_matrix ctm = fz_scale(state.render_zoom, state.render_zoom);
                         fz_drop_pixmap(pdf.ctx, pdf.pixmaps[first_page]);
                         pdf.pixmaps[first_page] = 
                             fz_new_pixmap_from_page_number(pdf.ctx, pdf.doc,
@@ -117,13 +145,14 @@ int main(int argc, char **argv) {
                                     ctm,
                                     fz_device_rgb(pdf.ctx),
                                     1);
-                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf.pixmaps[first_page]->w, pdf.pixmaps[first_page]->h,
-                                0, GL_RGBA, GL_UNSIGNED_BYTE, pdf.pixmaps[first_page]->samples);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf.pixmaps[first_page]->w,
+                                     pdf.pixmaps[first_page]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, 
+                                     pdf.pixmaps[first_page]->samples);
+
                         renderer.pages[first_page].page_number = renderer.pages[last_page].page_number + 1;
                     }
 
                     glUniform2fv(renderer.displacement_uniform, 1, state.pages_pos[first_page]);
-                    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
                     last_page = (last_page + 1) % MAX_RENDERED_PAGES;
                     first_page = (first_page + 1) % MAX_RENDERED_PAGES;
                 }
@@ -132,16 +161,16 @@ int main(int argc, char **argv) {
                 }
             }
 
+            // draw previous page if needed and check if it's the
+            // first page of the document
+
             while(state.zoom * state.pages_pos[first_page][1] < (1.0f - PAGE_GAP)) {
                 if(renderer.pages[first_page].page_number > 0) {
                     glBindTexture(GL_TEXTURE_2D, renderer.textures[last_page]);
                     state.pages_pos[last_page][1] = state.pages_pos[first_page][1] + (2.0f + PAGE_GAP); 
-                    // printf("pages_pos[last_page] = { %f, %f }\n", state.pages_pos[last_page][0], state.pages_pos[last_page][1]);
 
                     if(renderer.pages[last_page].page_number != renderer.pages[first_page].page_number - 1) {
-                        // printf("should rerender last page\n");
-                        float zoom = state.new_render_zoom;
-                        fz_matrix ctm = fz_scale(zoom, zoom);
+                        fz_matrix ctm = fz_scale(state.render_zoom, state.render_zoom);
                         fz_drop_pixmap(pdf.ctx, pdf.pixmaps[last_page]);
                         pdf.pixmaps[last_page] = 
                               fz_new_pixmap_from_page_number(pdf.ctx, pdf.doc,
@@ -149,13 +178,14 @@ int main(int argc, char **argv) {
                                                              ctm,
                                                              fz_device_rgb(pdf.ctx),
                                                              1);
-                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf.pixmaps[last_page]->w, pdf.pixmaps[last_page]->h,
-                                     0, GL_RGBA, GL_UNSIGNED_BYTE, pdf.pixmaps[last_page]->samples);
+                        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, pdf.pixmaps[last_page]->w,
+                                     pdf.pixmaps[last_page]->h, 0, GL_RGBA, GL_UNSIGNED_BYTE, 
+                                     pdf.pixmaps[last_page]->samples);
+
                         renderer.pages[last_page].page_number = renderer.pages[first_page].page_number - 1;
                     }
 
                     glUniform2fv(renderer.displacement_uniform, 1, state.pages_pos[last_page]);
-                    glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
                     last_page = (last_page + 1) % MAX_RENDERED_PAGES;
                     first_page = (first_page + 1) % MAX_RENDERED_PAGES;
                 }
@@ -164,17 +194,36 @@ int main(int argc, char **argv) {
                 }
             }
 
+            // draw pages
+
             for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-                float pos_y = state.pages_pos[i][1];
-                float half_bottom = -0.5f * state.zoom;
-                float half_top = 0.5f * state.zoom;
-                if(pos_y > half_bottom && pos_y < half_top) {
-                    state.current_page.page_number = renderer.pages[i].page_number;
-                    state.current_page.texture_index = renderer.pages[i].texture_index;
-                    // printf("current_page_number = %d\n", state.current_page.page_number);
-                    // printf("current_texture_index = %d\n", state.current_page.texture_index);
-                    break;
+                glBindTexture(GL_TEXTURE_2D, renderer.textures[i]);
+                glUniform2fv(renderer.displacement_uniform, 1, state.pages_pos[i]);
+                glDrawElements(GL_TRIANGLES, 6, GL_UNSIGNED_INT, 0);
+            }
+            
+            // calculate current page
+
+            float best_dist = MAX_ZOOM * 2.0f;
+            int best_page = -1;
+
+            for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
+                float center = state.pages_pos[i][1];
+
+                float dist = fabsf(center);
+
+                if(dist < best_dist) {
+                    best_dist = dist;
+                    best_page = i;
                 }
+            }
+
+            if(best_page >= 0) {
+                state.current_page.page_number =
+                    renderer.pages[best_page].page_number;
+
+                state.current_page.texture_index =
+                    renderer.pages[best_page].texture_index;
             }
 
             glfwSwapBuffers(win.glfw_win);
@@ -185,6 +234,7 @@ int main(int argc, char **argv) {
     }
 
     free(renderer.textures);
+    free(pdf.base_page_heights);
     free(pdf.pixmaps);
     destroy_window(&win);
     close_document(&pdf);
