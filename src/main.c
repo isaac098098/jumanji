@@ -137,6 +137,7 @@ int main(int argc, char **argv) {
                     // printf("pages_pos[first_page] = { %f, %f }\n", state.zoom * state.pages_pos[first_page][0], state.zoom * state.pages_pos[first_page][1]);
 
                     if(renderer.pages[first_page].page_number != renderer.pages[last_page].page_number + 1) {
+                        state.render_zoom = (state.window->height * state.zoom * 1.5f) / state.document->base_page_heights[first_page];
                         fz_matrix ctm = fz_scale(state.render_zoom, state.render_zoom);
                         fz_drop_pixmap(pdf.ctx, pdf.pixmaps[first_page]);
                         pdf.pixmaps[first_page] = 
@@ -170,6 +171,7 @@ int main(int argc, char **argv) {
                     state.pages_pos[last_page][1] = state.pages_pos[first_page][1] + (2.0f + PAGE_GAP); 
 
                     if(renderer.pages[last_page].page_number != renderer.pages[first_page].page_number - 1) {
+                        state.render_zoom = (state.window->height * state.zoom * 1.5f) / state.document->base_page_heights[last_page];
                         fz_matrix ctm = fz_scale(state.render_zoom, state.render_zoom);
                         fz_drop_pixmap(pdf.ctx, pdf.pixmaps[last_page]);
                         pdf.pixmaps[last_page] = 
