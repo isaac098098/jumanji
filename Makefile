@@ -36,6 +36,11 @@ build/pdf.o : src/pdf/pdf.c include/pdf.h
 run : build/jumanji
 	./build/jumanji $(TEST_FILE)
 
+install : build/jumanji
+	mkdir -p $(PREFIX)/share/jumanji
+	cp -r src/shaders $(PREFIX)/share/jumanji/
+	cp build/jumanji $(PREFIX)/bin
+
 debug : $(OBJS)
 	gcc $(OBJS) -o build/jumanji $(LIB) $(FLAGS) -g -O0
 	valgrind --leak-check=yes ./build/jumanji $(TEST_FILE) 2> valgrind.log
