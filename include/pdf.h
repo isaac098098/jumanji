@@ -10,6 +10,7 @@ typedef struct document {
     fz_pixmap **pixmaps;
     int width;
     int height;
+    int pages_num;
 } document;
 
 int open_document(document *pdf, const char *file_path);

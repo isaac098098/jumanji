@@ -34,11 +34,6 @@ int open_document(document *pdf, const char *file_path) {
         return -1;
     }
 
-    // count number of pages
-
-    // int pages_c = fz_count_pages(ctx, doc);
-    // printf("PDF has %d pages\n", pages_c);
-
     // get document colorspace
 
     fz_try(pdf->ctx) {
@@ -51,18 +46,9 @@ int open_document(document *pdf, const char *file_path) {
         return -1;
     }
 
-    // fz_page *page = fz_load_page(ctx, doc, 0);
-    // if(page == NULL) {
-        // fprintf(stderr, "could not load page!\n");
-        // fz_drop_pixmap(ctx, pixmap);
-        // fz_drop_colorspace(ctx, colorspace);
-        // fz_drop_document(ctx, doc);
-        // fz_drop_context(ctx);
-        // return -1;
-    // }
+    // count number of pages
 
-    // fz_rect rect = fz_bound_page(ctx, page);
-    // printf("x0 = %.7f, y0 = %.7f, x1 = %.7f, y1 = %.7f\n", rect.x0, rect.y0, rect.x1, rect.y1);
+    pdf->pages_num = fz_count_pages(pdf->ctx, pdf->doc);
 
     return 0;
 }

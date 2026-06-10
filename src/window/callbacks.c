@@ -29,6 +29,19 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
 
         glUniformMatrix2fv(s->renderer->zoom_uniform, 1, GL_FALSE, ID_MAT2);
         s->zoom = 1.0f;
+        s->new_render_zoom = 1.0f;
+
+        fz_matrix ctm = fz_scale(s->new_render_zoom, s->new_render_zoom);
+        fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
+        s->document->pixmaps[texture] =
+            fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
+                    s->renderer->pages[texture].page_number,
+                    ctm,
+                    fz_device_rgb(s->document->ctx),
+                    1);
+        glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w, s->document->pixmaps[texture]->h,
+                0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[texture]->samples);
 
         s->window->should_redraw = 1;
     }
@@ -72,20 +85,46 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
     }
 
     if(key == GLFW_KEY_J && (action == GLFW_PRESS || action == GLFW_REPEAT )) {
-        // scroll down whole page or 8% of window height
+        // scroll down whole page or 8% of window width
+
+        int texture = s->current_page.texture_index;
 
         if(mods & GLFW_MOD_SHIFT) {
-            int texture = (s->current_page.texture_index + 1) % MAX_RENDERED_PAGES;
-            s->current_page.texture_index = texture;
-            float stride = s->pages_pos[texture][1];
+            float page_stride = s->pages_pos[texture][1];
+            float stride = 2.0f + PAGE_GAP;
+            float delta = stride - page_stride;
+
+            if(s->current_page.page_number == s->document->pages_num - 1) {
+                float bottom_limit = 1.0f - (1.0f / s->zoom);
+                float new_pos = s->pages_pos[texture][1] + delta;
+
+                if(new_pos > bottom_limit) {
+                    delta = bottom_limit - s->pages_pos[texture][1];
+
+                    if(delta <= 0.0f) return;
+                }
+            }
 
             for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-                s->pages_pos[i][1] -= stride;
+                s->pages_pos[i][1] += delta;
             }
         }
         else {
+            float delta = 2.0f * 0.08f / s->zoom;
+
+            if(s->current_page.page_number == s->document->pages_num - 1) {
+                float bottom_limit = 1.0f - (1.0f / s->zoom);
+                float new_pos = s->pages_pos[texture][1] + delta;
+
+                if(new_pos > bottom_limit) {
+                    delta = bottom_limit - s->pages_pos[texture][1];
+
+                    if(delta <= 0.0f) return;
+                }
+            }
+
             for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-                s->pages_pos[i][1] += 2.0 * 0.08 / s->zoom;
+                s->pages_pos[i][1] += delta;
             }
         }
 
@@ -94,18 +133,45 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
 
     if(key == GLFW_KEY_K && (action == GLFW_PRESS || action == GLFW_REPEAT )) {
         // scroll up whole page or 8% of window width
+
+        int texture = s->current_page.texture_index;
+
         if(mods & GLFW_MOD_SHIFT) {
-            int texture = s->current_page.texture_index;
             float page_stride = s->pages_pos[texture][1];
             float stride = 2.0f + PAGE_GAP;
+            float delta = stride + page_stride;
+
+            if(s->current_page.page_number == 0) {
+                float top_limit = (1.0f / s->zoom) - 1.0f;
+                float new_pos = s->pages_pos[texture][1] - delta;
+
+                if(new_pos < top_limit) {
+                    delta = s->pages_pos[texture][1] - top_limit;
+
+                    if(delta <= 0.0f) return;
+                }
+            }
 
             for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-                s->pages_pos[i][1] -= stride + page_stride;
+                s->pages_pos[i][1] -= delta;
             }
         }
         else {
+            float delta = 2.0f * 0.08 / s->zoom;
+            
+            if(s->current_page.page_number == 0) {
+                float top_limit = (1.0f / s->zoom) - 1.0f;
+                float new_pos = s->pages_pos[texture][1] - delta;
+
+                if(new_pos < top_limit) {
+                    delta = s->pages_pos[texture][1] - top_limit;
+
+                    if(delta <= 0.0f) return;
+                }
+            }
+
             for(int i = 0; i < MAX_RENDERED_PAGES; i++) {
-                s->pages_pos[i][1] -= 2.0 * 0.08 / s->zoom;
+                s->pages_pos[i][1] -= delta;
             }
         }
 
@@ -187,6 +253,21 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
         glUniformMatrix2fv(s->renderer->zoom_uniform, 1, GL_FALSE, 
                            s->renderer->zoom_matrix);
 
+        s->new_render_zoom = (float)s->document->height / s->window->height;
+        s->changed_render_zoom = 1;
+
+        fz_matrix ctm = fz_scale(s->new_render_zoom, s->new_render_zoom);
+        fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
+        s->document->pixmaps[texture] =
+            fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
+                    s->renderer->pages[texture].page_number,
+                    ctm,
+                    fz_device_rgb(s->document->ctx),
+                    1);
+        glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w, s->document->pixmaps[texture]->h,
+                0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[texture]->samples);
+
         s->window->should_redraw = 1;
     }
 
@@ -250,7 +331,37 @@ void key_callback(GLFWwindow *win, int key, int scancode, int action, int mods) 
 
     if(key == GLFW_KEY_EQUAL && action == GLFW_RELEASE && (mods & GLFW_MOD_SHIFT))
     {
-        /* TODO: rerender page */
+        int texture = s->current_page.texture_index;
+
+        if(s->zoom > 1.5f) {
+            s->old_render_zoom = s->new_render_zoom;
+            s->new_render_zoom = 2.0f;
+        }
+
+        if(s->zoom > 3.0f) {
+            s->old_render_zoom = s->new_render_zoom;
+            s->new_render_zoom = 4.0f;
+        }
+
+        if(s->zoom > 6.0f) {
+            s->old_render_zoom = s->new_render_zoom;
+            s->new_render_zoom = 8.0f;
+        }
+
+        fz_matrix ctm = fz_scale(s->new_render_zoom, s->new_render_zoom);
+        printf("new_render_zoom = %f\n", s->new_render_zoom);
+        fz_drop_pixmap(s->document->ctx, s->document->pixmaps[texture]);
+        s->document->pixmaps[texture] =
+            fz_new_pixmap_from_page_number(s->document->ctx, s->document->doc,
+                    s->renderer->pages[texture].page_number,
+                    ctm,
+                    fz_device_rgb(s->document->ctx),
+                    1);
+        glBindTexture(GL_TEXTURE_2D, s->renderer->textures[texture]);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, s->document->pixmaps[texture]->w, s->document->pixmaps[texture]->h,
+                0, GL_RGBA, GL_UNSIGNED_BYTE, s->document->pixmaps[texture]->samples);
+
+        s->window->should_redraw = 1;
     }
 }
 

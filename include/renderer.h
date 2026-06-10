@@ -3,8 +3,9 @@
 
 #include "pdf.h"
 
-#define MAX_RENDERED_PAGES 4
+#define MAX_RENDERED_PAGES 10
 #define PAGE_GAP 0.01f
+#define INITIAL_RENDER_ZOOM 1.5f
 
 typedef struct window window;
 
