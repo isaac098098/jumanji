@@ -5,7 +5,7 @@ INCLUDE = -Iinclude/
 MACROS = -DSHADER_DIR=\"$(PREFIX)/share/jumanji/shaders/\"
 OBJS = build/main.o build/glad.o build/callbacks.o build/window.o build/pdf.o \
        build/renderer.o
-TEST_FILE = [put a local test file here]
+TEST_FILE = 
 
 build/jumanji : $(OBJS)
 	gcc $(OBJS) -o build/jumanji $(LIB) $(FLAGS)

@@ -11,6 +11,9 @@ int open_document(document *pdf, const char *file_path) {
         return -1;
     }
 
+    fz_set_warning_callback(pdf->ctx, NULL, NULL);
+    fz_set_error_callback(pdf->ctx, NULL, NULL);
+
     fz_try(pdf->ctx) {
         fz_register_document_handler(pdf->ctx, &pdf_document_handler);
     }
@@ -26,7 +29,7 @@ int open_document(document *pdf, const char *file_path) {
         pdf->doc = fz_open_document(pdf->ctx, file_path);
     }
     fz_catch(pdf->ctx) {
-        fprintf(stderr, "could not open file %s!\n", file_path);
+        fprintf(stderr, "could not open file %s\n", file_path);
         fz_drop_context(pdf->ctx);
         return -1;
     }
@@ -42,7 +45,7 @@ int open_document(document *pdf, const char *file_path) {
         pdf->colorspace = fz_document_output_intent(pdf->ctx, pdf->doc);
     }
     fz_catch(pdf->ctx) {
-        fprintf(stderr, "could not get output intent of %s!\n", file_path);
+        fprintf(stderr, "could not get output intent of %s\n", file_path);
         fz_drop_document(pdf->ctx, pdf->doc);
         fz_drop_context(pdf->ctx);
         return -1;
